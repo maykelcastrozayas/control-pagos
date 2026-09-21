@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Pagos</title>
+  
+  <!-- Configuración PWA / Modo App -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pagos">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2331/2331970.png">
+
+  <!-- Firebase Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --border: #d1d5db;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); margin: 0; padding: 16px; }
+    .container { max-width: 1100px; margin: auto; }
+    h1, h2 { margin-top: 0; }
+    .sync-status { font-size: 0.8rem; color: var(--success); font-weight: 600; margin-bottom: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .full-width { grid-column: 1 / -1; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #4b5563; }
+    input, select, textarea, button { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; }
+    button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+    button:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #64748b; margin-top: 8px; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-delete { background: var(--danger); width: auto; padding: 6px 10px; font-size: 0.8rem; }
+    .btn-edit { background: var(--warning); width: auto; padding: 6px 10px; font-size: 0.8rem; margin-right: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); font-size: 0.88rem; vertical-align: top; }
+    th { background: #f8fafc; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-completado { background: #dcfce7; color: var(--success); }
+    .badge-parcial { background: #fef3c7; color: var(--warning); }
+    .badge-pendiente { background: #fee2e2; color: var(--danger); }
+    .totals { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-weight: bold; background: #f8fafc; padding: 12px; border-radius: 6px; }
+    .totals span { font-size: 0.92rem; }
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none; }
+      .card { border: none; box-shadow: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Control de Trabajos y Pagos</h1>
+  <div class="sync-status" id="sync-status">🟢 Conectando a la nube...</div>
+
+  <!-- Formulario -->
+  <section class="card no-print">
+    <h2 id="form-title">Registrar Trabajo</h2>
+    <input type="hidden" id="entry-id">
+    <div class="grid">
+      <div>
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha" required>
+      </div>
+      <div>
+        <label for="local">Local</label>
+        <input type="text" id="local" placeholder="Ej: Sucursal Centro" required>
+      </div>
+      <div>
+        <label for="empleados">Empleados (separados por coma)</label>
+        <input type="text" id="empleados" placeholder="Ej: Maykel, Pedro" required>
+      </div>
+      <div>
+        <label for="pago-esperado">Pago Esperado ($)</label>
+        <input type="number" id="pago-esperado" step="0.01" min="0" required oninput="calcRemaining()">
+      </div>
+      <div>
+        <label for="estado-pago">Estado del Pago</label>
+        <select id="estado-pago" onchange="handleStatusChange()">
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+          <option value="completado">Completado</option>
+        </select>
+      </div>
+      <div>
+        <label for="monto-pagado">Monto Pagado ($)</label>
+        <input type="number" id="monto-pagado" step="0.01" min="0" value="0" disabled oninput="calcRemaining()">
+      </div>
+      <div>
+        <label for="saldo-pendiente">Saldo Restante ($)</label>
+        <input type="number" id="saldo-pendiente" step="0.01" readonly style="background:#e5e7eb;">
+      </div>
+      <div class="full-width">
+        <label for="comentarios">Comentarios</label>
+        <textarea id="comentarios" rows="2" placeholder="Notas, acuerdos o detalles"></textarea>
+      </div>
+      <div class="full-width">
+        <button id="btn-save" onclick="saveRecord()">Guardar Registro</button>
+        <button id="btn-cancel" class="btn-secondary" onclick="resetForm()" style="display:none;">Cancelar Edición</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Reporte -->
+  <section class="card">
+    <div class="no-print">
+      <h2>Reporte de Pagos</h2>
+      <div class="grid">
+        <div>
+          <label for="rep-inicio">Desde</label>
+          <input type="date" id="rep-inicio">
+        </div>
+        <div>
+          <label for="rep-fin">Hasta</label>
+          <input type="date" id="rep-fin">
+        </div>
+        <div>
+          <label for="rep-empleado">Filtrar por Empleado</label>
+          <select id="rep-empleado">
+            <option value="todos">Todos (General)</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:8px;">
+          <button onclick="renderReport()">Filtrar</button>
+          <button class="btn-secondary" onclick="window.print()" style="margin:0;">Imprimir / PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="totals" id="resumen-totales">
+      <span>Total Esperado: $0.00</span>
+      <span>Total Pagado: $0.00</span>
+      <span>Total Pendiente: $0.00</span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Local</th>
+            <th>Empleados</th>
+            <th>Esperado</th>
+            <th>Pagado</th>
+            <th>Resta</th>
+            <th>Estado</th>
+            <th>Comentarios</th>
+            <th class="no-print">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-registros"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+  // REEMPLAZA CON TUS CREDENCIALES DE FIREBASE
+  const firebaseConfig = {
+  apiKey: "AIzaSyB4NVyCjDN9TCSAo2JwAb9W9v-_j69QbA4",
+  authDomain: "control-pagos-cb2fa.firebaseapp.com",
+  databaseURL: "https://control-pagos-cb2fa-default-rtdb.firebaseio.com",
+  projectId: "control-pagos-cb2fa",
+  storageBucket: "control-pagos-cb2fa.firebasestorage.app",
+  messagingSenderId: "538885209616",
+  appId: "1:538885209616:web:81800269c2c2d14008d495"
+};
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+  const recordsRef = db.ref('trabajos');
+
+  let records = [];
+
+  recordsRef.on('value', (snapshot) => {
+    const data = snapshot.val();
+    records = [];
+    if (data) {
+      Object.keys(data).forEach(key => {
+        records.push({ id: key, ...data[key] });
+      });
+    }
+    populateEmployees();
+    renderReport();
+    document.getElementById('sync-status').innerText = '🟢 Conectado y sincronizado en tiempo real';
+  }, (error) => {
+    document.getElementById('sync-status').innerText = '🔴 Error: ' + error.message;
+  });
+
+  function setDefaultDates() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    
+    document.getElementById('fecha').value = `${y}-${m}-${d}`;
+    document.getElementById('rep-inicio').value = `${y}-${m}-01`;
+    const lastDay = new Date(y, today.getMonth() + 1, 0).getDate();
+    document.getElementById('rep-fin').value = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  function handleStatusChange() {
+    const status = document.getElementById('estado-pago').value;
+    const expected = parseFloat(document.getElementById('pago-esperado').value) || 0;
+    const paidInput = document.getElementById('monto-pagado');
+
+    if (status === 'pendiente') {
+      paidInput.value = 0;
+      paidInput.disabled = true;
+    } else if (status === 'completado') {
+      paidInput.value = expected;
+      paidInput.disabled = true;
+    } else {
+      paidInput.disabled = false;
+      if (parseFloat(paidInput.value) >= expected || parseFloat(paidInput.value) === 0) {
+        paidInput.value = '';
+      }
+    }
+    calcRemaining();
+  }
+
+  function calcRemaining() {
+    const expected = parseFloat(document.getElementById('pago-esperado').value) || 0;
+    let paid = parseFloat(document.getElementById('monto-pagado').value) || 0;
+    const status = document.getElementById('estado-pago').value;
+
+    if (status === 'completado') paid = expected;
+    if (status === 'pendiente') paid = 0;
+
+    const remaining = Math.max(0, expected - paid);
+    document.getElementById('saldo-pendiente').value = remaining.toFixed(2);
+  }
+
+  function saveRecord() {
+    const id = document.getElementById('entry-id').value;
+    const fecha = document.getElementById('fecha').value;
+    const local = document.getElementById('local').value.trim();
+    const empleadosRaw = document.getElementById('empleados').value.trim();
+    const expected = parseFloat(document.getElementById('pago-esperado').value) || 0;
+    const status = document.getElementById('estado-pago').value;
+    let paid = parseFloat(document.getElementById('monto-pagado').value) || 0;
+    const comentarios = document.getElementById('comentarios').value.trim();
+
+    if (!fecha || !local || !empleadosRaw || expected <= 0) {
+      alert("Por favor completa fecha, local, empleados y monto esperado.");
+      return;
+    }
+
+    if (status === 'completado') paid = expected;
+    if (status === 'pendiente') paid = 0;
+    const remaining = Math.max(0, expected - paid);
+    const empleados = empleadosRaw.split(',').map(e => e.trim()).filter(e => e.length > 0);
+
+    const recordData = {
+      fecha,
+      local,
+      empleados,
+      pagoEsperado: expected,
+      montoPagado: paid,
+      saldoPendiente: remaining,
+      estado: status,
+      comentarios
+    };
+
+    if (id) {
+      recordsRef.child(id).set(recordData).then(() => resetForm());
+    } else {
+      recordsRef.push(recordData).then(() => resetForm());
+    }
+  }
+
+  function resetForm() {
+    document.getElementById('entry-id').value = '';
+    document.getElementById('form-title').innerText = "Registrar Trabajo";
+    document.getElementById('btn-save').innerText = "Guardar Registro";
+    document.getElementById('btn-cancel').style.display = 'none';
+    document.getElementById('local').value = '';
+    document.getElementById('empleados').value = '';
+    document.getElementById('pago-esperado').value = '';
+    document.getElementById('monto-pagado').value = 0;
+    document.getElementById('monto-pagado').disabled = true;
+    document.getElementById('saldo-pendiente').value = '';
+    document.getElementById('estado-pago').value = 'pendiente';
+    document.getElementById('comentarios').value = '';
+    setDefaultDates();
+  }
+
+  function editRecord(id) {
+    const item = records.find(r => r.id === id);
+    if (!item) return;
+
+    document.getElementById('entry-id').value = item.id;
+    document.getElementById('form-title').innerText = "Editar Trabajo";
+    document.getElementById('btn-save').innerText = "Actualizar Registro";
+    document.getElementById('btn-cancel').style.display = 'inline-block';
+
+    document.getElementById('fecha').value = item.fecha;
+    document.getElementById('local').value = item.local;
+    document.getElementById('empleados').value = item.empleados.join(', ');
+    document.getElementById('pago-esperado').value = item.pagoEsperado;
+    document.getElementById('estado-pago').value = item.estado;
+    document.getElementById('monto-pagado').value = item.montoPagado;
+    document.getElementById('monto-pagado').disabled = (item.estado !== 'parcial');
+    document.getElementById('saldo-pendiente').value = item.saldoPendiente.toFixed(2);
+    document.getElementById('comentarios').value = item.comentarios || '';
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function deleteRecord(id) {
+    if (confirm("¿Deseas eliminar este registro? Se borrará para ambos.")) {
+      recordsRef.child(id).remove();
+    }
+  }
+
+  function populateEmployees() {
+    const select = document.getElementById('rep-empleado');
+    const currentVal = select.value;
+    const set = new Set();
+    records.forEach(r => (r.empleados || []).forEach(e => set.add(e)));
+
+    select.innerHTML = '<option value="todos">Todos (General)</option>';
+    Array.from(set).sort().forEach(emp => {
+      const opt = document.createElement('option');
+      opt.value = emp;
+      opt.textContent = emp;
+      select.appendChild(opt);
+    });
+
+    if (Array.from(set).includes(currentVal)) {
+      select.value = currentVal;
+    }
+  }
+
+  function renderReport() {
+    const start = document.getElementById('rep-inicio').value;
+    const end = document.getElementById('rep-fin').value;
+    const empFilter = document.getElementById('rep-empleado').value;
+
+    const filtered = records.filter(r => {
+      const matchDate = (!start || r.fecha >= start) && (!end || r.fecha <= end);
+      const matchEmp = empFilter === 'todos' || (r.empleados && r.empleados.includes(empFilter));
+      return matchDate && matchEmp;
+    });
+
+    filtered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    const tbody = document.getElementById('tabla-registros');
+    tbody.innerHTML = '';
+
+    let totExp = 0, totPaid = 0, totRem = 0;
+
+    filtered.forEach(r => {
+      totExp += r.pagoEsperado || 0;
+      totPaid += r.montoPagado || 0;
+      totRem += r.saldoPendiente || 0;
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${r.fecha}</td>
+        <td><strong>${r.local}</strong></td>
+        <td>${(r.empleados || []).join(', ')}</td>
+        <td>$${(r.pagoEsperado || 0).toFixed(2)}</td>
+        <td>$${(r.montoPagado || 0).toFixed(2)}</td>
+        <td style="color:${r.saldoPendiente > 0 ? 'var(--danger)' : 'inherit'}; font-weight:600;">$${(r.saldoPendiente || 0).toFixed(2)}</td>
+        <td><span class="badge badge-${r.estado}">${(r.estado || '').toUpperCase()}</span></td>
+        <td>${r.comentarios || '-'}</td>
+        <td class="no-print">
+          <button class="btn-edit" onclick="editRecord('${r.id}')">Editar</button>
+          <button class="btn-delete" onclick="deleteRecord('${r.id}')">Borrar</button>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    document.getElementById('resumen-totales').innerHTML = `
+      <span>Total Esperado: $${totExp.toFixed(2)}</span>
+      <span>Total Pagado: $${totPaid.toFixed(2)}</span>
+      <span style="color:var(--danger)">Total Pendiente: $${totRem.toFixed(2)}</span>
+    `;
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log('PWA lista'))
+      .catch((err) => console.log('Error SW:', err));
+  }
+
+  setDefaultDates();
+</script>
+</body>
+</html>
