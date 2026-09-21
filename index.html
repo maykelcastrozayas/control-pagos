@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control de Pagos</title>
+  <title>Control de Trabajos y Pagos</title>
   
-  <!-- Configuración PWA / Modo App -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2563eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,8 +30,8 @@
     }
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: var(--bg); color: var(--text); margin: 0; padding: 16px; }
-    .container { max-width: 1100px; margin: auto; }
-    h1, h2 { margin-top: 0; }
+    .container { max-width: 1150px; margin: auto; }
+    h1, h2, h3 { margin-top: 0; }
     .sync-status { font-size: 0.8rem; color: var(--success); font-weight: 600; margin-bottom: 12px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
@@ -41,7 +40,7 @@
     input, select, textarea, button { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; }
     button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
     button:hover { background: var(--primary-hover); }
-    .btn-secondary { background: #64748b; margin-top: 8px; }
+    .btn-secondary { background: #64748b; }
     .btn-secondary:hover { background: #475569; }
     .btn-delete { background: var(--danger); width: auto; padding: 6px 10px; font-size: 0.8rem; }
     .btn-edit { background: var(--warning); width: auto; padding: 6px 10px; font-size: 0.8rem; margin-right: 4px; }
@@ -54,6 +53,12 @@
     .badge-pendiente { background: #fee2e2; color: var(--danger); }
     .totals { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-weight: bold; background: #f8fafc; padding: 12px; border-radius: 6px; }
     .totals span { font-size: 0.92rem; }
+    .checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: #fafafa; max-height: 120px; overflow-y: auto; }
+    .checkbox-item { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; margin-bottom: 0; cursor: pointer; }
+    .checkbox-item input { width: auto; }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .tag-item { background: #e2e8f0; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; }
+    .tag-remove { color: var(--danger); cursor: pointer; font-weight: bold; }
     @media print {
       body { background: white; padding: 0; }
       .no-print { display: none; }
@@ -66,7 +71,30 @@
   <h1>Control de Trabajos y Pagos</h1>
   <div class="sync-status" id="sync-status">🟢 Conectando a la nube...</div>
 
-  <!-- Formulario -->
+  <!-- Catálogos Previos (Locales y Empleados) -->
+  <details class="card no-print" style="margin-bottom:16px;">
+    <summary style="font-weight:600; cursor:pointer; font-size:1rem; color:var(--primary);">⚙️ Administrar Locales y Empleados (Configuración previa)</summary>
+    <div class="grid" style="margin-top:14px;">
+      <div>
+        <label>Agregar Nuevo Local</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="nuevo-local" placeholder="Ej: Sucursal Centro">
+          <button style="width:auto;" onclick="addCatalogItem('locales', 'nuevo-local')">Agregar</button>
+        </div>
+        <div class="tag-list" id="lista-locales"></div>
+      </div>
+      <div>
+        <label>Agregar Nuevo Empleado</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="nuevo-empleado" placeholder="Ej: Carlos">
+          <button style="width:auto;" onclick="addCatalogItem('empleados', 'nuevo-empleado')">Agregar</button>
+        </div>
+        <div class="tag-list" id="lista-empleados"></div>
+      </div>
+    </div>
+  </details>
+
+  <!-- Formulario de Registro -->
   <section class="card no-print">
     <h2 id="form-title">Registrar Trabajo</h2>
     <input type="hidden" id="entry-id">
@@ -77,14 +105,18 @@
       </div>
       <div>
         <label for="local">Local</label>
-        <input type="text" id="local" placeholder="Ej: Sucursal Centro" required>
+        <select id="local" required>
+          <option value="">-- Selecciona Local --</option>
+        </select>
+      </div>
+      <div class="full-width">
+        <label>Empleados asignados a este trabajo (marca todos los que participaron)</label>
+        <div class="checkbox-group" id="empleados-checkboxes">
+          <span style="font-size:0.85rem; color:#6b7280;">Agrega empleados en la sección superior primero.</span>
+        </div>
       </div>
       <div>
-        <label for="empleados">Empleados (separados por coma)</label>
-        <input type="text" id="empleados" placeholder="Ej: Maykel, Pedro" required>
-      </div>
-      <div>
-        <label for="pago-esperado">Pago Esperado ($)</label>
+        <label for="pago-esperado">Pago Total Esperado ($)</label>
         <input type="number" id="pago-esperado" step="0.01" min="0" required oninput="calcRemaining()">
       </div>
       <div>
@@ -105,19 +137,19 @@
       </div>
       <div class="full-width">
         <label for="comentarios">Comentarios</label>
-        <textarea id="comentarios" rows="2" placeholder="Notas, acuerdos o detalles"></textarea>
+        <textarea id="comentarios" rows="2" placeholder="Notas sobre horas, acuerdos, etc."></textarea>
       </div>
-      <div class="full-width">
+      <div class="full-width" style="display:flex; gap:10px;">
         <button id="btn-save" onclick="saveRecord()">Guardar Registro</button>
-        <button id="btn-cancel" class="btn-secondary" onclick="resetForm()" style="display:none;">Cancelar Edición</button>
+        <button id="btn-cancel" class="btn-secondary" onclick="resetForm()" style="display:none; width:auto;">Cancelar</button>
       </div>
     </div>
   </section>
 
-  <!-- Reporte -->
+  <!-- Reportes -->
   <section class="card">
     <div class="no-print">
-      <h2>Reporte de Pagos</h2>
+      <h2>Reporte y Desglose</h2>
       <div class="grid">
         <div>
           <label for="rep-inicio">Desde</label>
@@ -130,22 +162,33 @@
         <div>
           <label for="rep-empleado">Filtrar por Empleado</label>
           <select id="rep-empleado">
-            <option value="todos">Todos (General)</option>
+            <option value="todos">Todos los Empleados</option>
           </select>
         </div>
-        <div style="display:flex; align-items:flex-end; gap:8px;">
-          <button onclick="renderReport()">Filtrar</button>
-          <button class="btn-secondary" onclick="window.print()" style="margin:0;">Imprimir / PDF</button>
+        <div>
+          <label for="rep-local">Filtrar por Local</label>
+          <select id="rep-local">
+            <option value="todos">Todos los Locales</option>
+          </select>
+        </div>
+        <div class="full-width" style="display:flex; gap:8px;">
+          <button onclick="renderReport()" style="width:auto; padding:8px 16px;">Aplicar Filtros</button>
+          <button class="btn-secondary" onclick="window.print()" style="width:auto; padding:8px 16px;">Imprimir / PDF</button>
         </div>
       </div>
     </div>
 
+    <!-- Totales -->
     <div class="totals" id="resumen-totales">
       <span>Total Esperado: $0.00</span>
       <span>Total Pagado: $0.00</span>
       <span>Total Pendiente: $0.00</span>
     </div>
 
+    <!-- Mensaje dinámico del informe -->
+    <div id="informe-resumen-texto" style="margin-top:10px; font-weight:600; font-size:0.95rem; color:#1e40af;"></div>
+
+    <!-- Tabla -->
     <div style="overflow-x:auto;">
       <table>
         <thead>
@@ -153,7 +196,8 @@
             <th>Fecha</th>
             <th>Local</th>
             <th>Empleados</th>
-            <th>Esperado</th>
+            <th>Total Trabajo</th>
+            <th>Por Empleado</th>
             <th>Pagado</th>
             <th>Resta</th>
             <th>Estado</th>
@@ -168,23 +212,37 @@
 </div>
 
 <script>
-  // REEMPLAZA CON TUS CREDENCIALES DE FIREBASE
+  // ==========================================
+  // CONFIGURACIÓN DE FIREBASE (COLOCA TUS CLAVES)
+  // ==========================================
   const firebaseConfig = {
-  apiKey: "AIzaSyB4NVyCjDN9TCSAo2JwAb9W9v-_j69QbA4",
-  authDomain: "control-pagos-cb2fa.firebaseapp.com",
-  databaseURL: "https://control-pagos-cb2fa-default-rtdb.firebaseio.com",
-  projectId: "control-pagos-cb2fa",
-  storageBucket: "control-pagos-cb2fa.firebasestorage.app",
-  messagingSenderId: "538885209616",
-  appId: "1:538885209616:web:81800269c2c2d14008d495"
-};
+    apiKey: "TU_API_KEY",
+    authDomain: "TU_PROYECTO.firebaseapp.com",
+    databaseURL: "https://TU_PROYECTO-default-rtdb.firebaseio.com",
+    projectId: "TU_PROYECTO",
+    storageBucket: "TU_PROYECTO.appspot.com",
+    messagingSenderId: "NUMERO_SENDER",
+    appId: "TU_APP_ID"
+  };
 
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
   const recordsRef = db.ref('trabajos');
+  const catalogRef = db.ref('catalogos');
 
   let records = [];
+  let catalogos = { locales: [], empleados: [] };
 
+  // Escuchar catálogos
+  catalogRef.on('value', (snap) => {
+    const data = snap.val() || {};
+    catalogos.locales = data.locales ? Object.values(data.locales) : [];
+    catalogos.empleados = data.empleados ? Object.values(data.empleados) : [];
+    renderCatalogs();
+    populateSelects();
+  });
+
+  // Escuchar trabajos en tiempo real
   recordsRef.on('value', (snapshot) => {
     const data = snapshot.val();
     records = [];
@@ -193,23 +251,73 @@
         records.push({ id: key, ...data[key] });
       });
     }
-    populateEmployees();
     renderReport();
     document.getElementById('sync-status').innerText = '🟢 Conectado y sincronizado en tiempo real';
-  }, (error) => {
-    document.getElementById('sync-status').innerText = '🔴 Error: ' + error.message;
+  }, (err) => {
+    document.getElementById('sync-status').innerText = '🔴 Error: ' + err.message;
   });
 
-  function setDefaultDates() {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
-    
-    document.getElementById('fecha').value = `${y}-${m}-${d}`;
-    document.getElementById('rep-inicio').value = `${y}-${m}-01`;
-    const lastDay = new Date(y, today.getMonth() + 1, 0).getDate();
-    document.getElementById('rep-fin').value = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+  function addCatalogItem(type, inputId) {
+    const val = document.getElementById(inputId).value.trim();
+    if (!val) return;
+    catalogRef.child(type).push(val);
+    document.getElementById(inputId).value = '';
+  }
+
+  function removeCatalogItem(type, value) {
+    catalogRef.child(type).once('value', (snap) => {
+      snap.forEach(child => {
+        if (child.val() === value) {
+          catalogRef.child(type).child(child.key).remove();
+        }
+      });
+    });
+  }
+
+  function renderCatalogs() {
+    const locBox = document.getElementById('lista-locales');
+    locBox.innerHTML = catalogos.locales.map(l => 
+      `<span class="tag-item">${l} <span class="tag-remove" onclick="removeCatalogItem('locales', '${l}')">×</span></span>`
+    ).join('');
+
+    const empBox = document.getElementById('lista-empleados');
+    empBox.innerHTML = catalogos.empleados.map(e => 
+      `<span class="tag-item">${e} <span class="tag-remove" onclick="removeCatalogItem('empleados', '${e}')">×</span></span>`
+    ).join('');
+  }
+
+  function populateSelects() {
+    // Select Local en formulario
+    const localSelect = document.getElementById('local');
+    const currLocal = localSelect.value;
+    localSelect.innerHTML = '<option value="">-- Selecciona Local --</option>' + 
+      catalogos.locales.map(l => `<option value="${l}">${l}</option>`).join('');
+    localSelect.value = currLocal;
+
+    // Checkboxes Empleados en formulario
+    const empCheckboxes = document.getElementById('empleados-checkboxes');
+    if (catalogos.empleados.length === 0) {
+      empCheckboxes.innerHTML = '<span style="font-size:0.85rem; color:#6b7280;">No hay empleados creados.</span>';
+    } else {
+      empCheckboxes.innerHTML = catalogos.empleados.map(e => `
+        <label class="checkbox-item">
+          <input type="checkbox" name="emp-check" value="${e}"> ${e}
+        </label>
+      `).join('');
+    }
+
+    // Selects en Reporte
+    const repEmp = document.getElementById('rep-empleado');
+    const currRepEmp = repEmp.value;
+    repEmp.innerHTML = '<option value="todos">Todos los Empleados</option>' +
+      catalogos.empleados.map(e => `<option value="${e}">${e}</option>`).join('');
+    repEmp.value = currRepEmp || 'todos';
+
+    const repLoc = document.getElementById('rep-local');
+    const currRepLoc = repLoc.value;
+    repLoc.innerHTML = '<option value="todos">Todos los Locales</option>' +
+      catalogos.locales.map(l => `<option value="${l}">${l}</option>`).join('');
+    repLoc.value = currRepLoc || 'todos';
   }
 
   function handleStatusChange() {
@@ -225,9 +333,6 @@
       paidInput.disabled = true;
     } else {
       paidInput.disabled = false;
-      if (parseFloat(paidInput.value) >= expected || parseFloat(paidInput.value) === 0) {
-        paidInput.value = '';
-      }
     }
     calcRemaining();
   }
@@ -247,27 +352,27 @@
   function saveRecord() {
     const id = document.getElementById('entry-id').value;
     const fecha = document.getElementById('fecha').value;
-    const local = document.getElementById('local').value.trim();
-    const empleadosRaw = document.getElementById('empleados').value.trim();
+    const local = document.getElementById('local').value;
     const expected = parseFloat(document.getElementById('pago-esperado').value) || 0;
     const status = document.getElementById('estado-pago').value;
     let paid = parseFloat(document.getElementById('monto-pagado').value) || 0;
     const comentarios = document.getElementById('comentarios').value.trim();
 
-    if (!fecha || !local || !empleadosRaw || expected <= 0) {
-      alert("Por favor completa fecha, local, empleados y monto esperado.");
+    const selectedEmp = Array.from(document.querySelectorAll('input[name="emp-check"]:checked')).map(c => c.value);
+
+    if (!fecha || !local || selectedEmp.length === 0 || expected <= 0) {
+      alert("Por favor selecciona fecha, local, al menos un empleado y el pago esperado.");
       return;
     }
 
     if (status === 'completado') paid = expected;
     if (status === 'pendiente') paid = 0;
     const remaining = Math.max(0, expected - paid);
-    const empleados = empleadosRaw.split(',').map(e => e.trim()).filter(e => e.length > 0);
 
     const recordData = {
       fecha,
       local,
-      empleados,
+      empleados: selectedEmp,
       pagoEsperado: expected,
       montoPagado: paid,
       saldoPendiente: remaining,
@@ -288,7 +393,7 @@
     document.getElementById('btn-save').innerText = "Guardar Registro";
     document.getElementById('btn-cancel').style.display = 'none';
     document.getElementById('local').value = '';
-    document.getElementById('empleados').value = '';
+    document.querySelectorAll('input[name="emp-check"]').forEach(c => c.checked = false);
     document.getElementById('pago-esperado').value = '';
     document.getElementById('monto-pagado').value = 0;
     document.getElementById('monto-pagado').disabled = true;
@@ -309,51 +414,50 @@
 
     document.getElementById('fecha').value = item.fecha;
     document.getElementById('local').value = item.local;
-    document.getElementById('empleados').value = item.empleados.join(', ');
+
+    document.querySelectorAll('input[name="emp-check"]').forEach(c => {
+      c.checked = (item.empleados || []).includes(c.value);
+    });
+
     document.getElementById('pago-esperado').value = item.pagoEsperado;
     document.getElementById('estado-pago').value = item.estado;
     document.getElementById('monto-pagado').value = item.montoPagado;
     document.getElementById('monto-pagado').disabled = (item.estado !== 'parcial');
-    document.getElementById('saldo-pendiente').value = item.saldoPendiente.toFixed(2);
+    document.getElementById('saldo-pendiente').value = (item.saldoPendiente || 0).toFixed(2);
     document.getElementById('comentarios').value = item.comentarios || '';
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function deleteRecord(id) {
-    if (confirm("¿Deseas eliminar este registro? Se borrará para ambos.")) {
+    if (confirm("¿Deseas eliminar este registro?")) {
       recordsRef.child(id).remove();
     }
   }
 
-  function populateEmployees() {
-    const select = document.getElementById('rep-empleado');
-    const currentVal = select.value;
-    const set = new Set();
-    records.forEach(r => (r.empleados || []).forEach(e => set.add(e)));
-
-    select.innerHTML = '<option value="todos">Todos (General)</option>';
-    Array.from(set).sort().forEach(emp => {
-      const opt = document.createElement('option');
-      opt.value = emp;
-      opt.textContent = emp;
-      select.appendChild(opt);
-    });
-
-    if (Array.from(set).includes(currentVal)) {
-      select.value = currentVal;
-    }
+  function setDefaultDates() {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    
+    document.getElementById('fecha').value = `${y}-${m}-${d}`;
+    document.getElementById('rep-inicio').value = `${y}-${m}-01`;
+    const lastDay = new Date(y, today.getMonth() + 1, 0).getDate();
+    document.getElementById('rep-fin').value = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
   }
 
   function renderReport() {
     const start = document.getElementById('rep-inicio').value;
     const end = document.getElementById('rep-fin').value;
     const empFilter = document.getElementById('rep-empleado').value;
+    const locFilter = document.getElementById('rep-local').value;
 
     const filtered = records.filter(r => {
       const matchDate = (!start || r.fecha >= start) && (!end || r.fecha <= end);
       const matchEmp = empFilter === 'todos' || (r.empleados && r.empleados.includes(empFilter));
-      return matchDate && matchEmp;
+      const matchLoc = locFilter === 'todos' || r.local === locFilter;
+      return matchDate && matchEmp && matchLoc;
     });
 
     filtered.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
@@ -362,11 +466,20 @@
     tbody.innerHTML = '';
 
     let totExp = 0, totPaid = 0, totRem = 0;
+    let totEmpIndividual = 0;
 
     filtered.forEach(r => {
+      const numEmp = (r.empleados && r.empleados.length > 0) ? r.empleados.length : 1;
+      const portionPerEmp = (r.pagoEsperado || 0) / numEmp;
+      const paidPerEmp = (r.montoPagado || 0) / numEmp;
+
       totExp += r.pagoEsperado || 0;
       totPaid += r.montoPagado || 0;
       totRem += r.saldoPendiente || 0;
+
+      if (empFilter !== 'todos') {
+        totEmpIndividual += portionPerEmp;
+      }
 
       const row = document.createElement('tr');
       row.innerHTML = `
@@ -374,6 +487,7 @@
         <td><strong>${r.local}</strong></td>
         <td>${(r.empleados || []).join(', ')}</td>
         <td>$${(r.pagoEsperado || 0).toFixed(2)}</td>
+        <td style="color:#0284c7; font-weight:600;">$${portionPerEmp.toFixed(2)} c/u</td>
         <td>$${(r.montoPagado || 0).toFixed(2)}</td>
         <td style="color:${r.saldoPendiente > 0 ? 'var(--danger)' : 'inherit'}; font-weight:600;">$${(r.saldoPendiente || 0).toFixed(2)}</td>
         <td><span class="badge badge-${r.estado}">${(r.estado || '').toUpperCase()}</span></td>
@@ -391,6 +505,15 @@
       <span>Total Pagado: $${totPaid.toFixed(2)}</span>
       <span style="color:var(--danger)">Total Pendiente: $${totRem.toFixed(2)}</span>
     `;
+
+    // Resumen explícito solicitado: "Empleado X trabajó de fecha a fecha en local Y y ganó Z"
+    const resumenTexto = document.getElementById('informe-resumen-texto');
+    if (empFilter !== 'todos') {
+      const localDesc = locFilter === 'todos' ? 'todos los locales' : `el local "${locFilter}"`;
+      resumenTexto.innerText = `📌 Resumen individual: ${empFilter} trabajó del ${start || 'inicio'} al ${end || 'fin'} en ${localDesc} con un total acumulado de $${totEmpIndividual.toFixed(2)}.`;
+    } else {
+      resumenTexto.innerText = '';
+    }
   }
 
   if ('serviceWorker' in navigator) {
